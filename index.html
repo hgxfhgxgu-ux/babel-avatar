@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BXL Trade</title>
+  <style>
+    :root { --accent:#ffb000; --bg:#090b10; --panel:#11151d; --text:#f7f8fa; --green:#00c087; --red:#ef5350; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:Inter,system-ui,sans-serif; }
+    .app { max-width:760px; min-height:100vh; margin:auto; padding:12px; }
+    header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+    .brand { font-weight:900; letter-spacing:.5px; } .brand span { color:var(--accent); }
+    .pill { background:var(--panel); border:1px solid #252a34; border-radius:20px; padding:7px 10px; font-size:12px; }
+    .pair { display:flex; justify-content:space-between; align-items:flex-end; margin:4px 0 8px; }
+    .symbol { font-size:20px; font-weight:800; } .price { color:var(--green); font-size:24px; font-weight:800; }
+    .chart-wrap { position:relative; height:430px; background:var(--panel); border:1px solid #252a34; border-radius:10px; overflow:hidden; }
+    canvas { width:100%; height:100%; display:block; touch-action:none; }
+    .toolbar { position:absolute; z-index:2; top:8px; left:8px; display:flex; gap:6px; }
+    .tool { border:1px solid #343b48; background:#151a23cc; color:white; height:32px; min-width:32px; border-radius:7px; cursor:pointer; }
+    .tool.active { outline:2px solid var(--accent); }
+    .result { position:absolute; z-index:3; left:50%; top:55%; transform:translate(-50%,-50%) scale(.8); opacity:0; pointer-events:none; text-align:center; padding:12px 18px; border-radius:10px; background:#161a22ee; border:1px solid #3a404b; transition:.25s; }
+    .result.show { opacity:1; transform:translate(-50%,-50%) scale(1); }
+    .result.win { color:var(--green); } .result.loss { color:var(--red); }
+    .result b { display:block; font-size:24px; }
+    .trade { position:relative; display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; }
+    .trade button { height:58px; border:0; border-radius:9px; color:white; font-weight:900; font-size:17px; cursor:pointer; }
+    #buy { background:var(--green); } #sell { background:var(--red); }
+    .timer { grid-column:1/-1; height:42px; display:flex; align-items:center; justify-content:center; border:1px solid #343b48; border-radius:9px; background:var(--panel); font-weight:800; }
+    .timer span { color:var(--accent); font-size:20px; margin-left:7px; }
+    .modal { position:fixed; inset:0; z-index:10; display:none; place-items:center; background:#0009; padding:20px; }
+    .modal.open { display:grid; }
+    .modal-card { width:min(380px,100%); background:var(--panel); border:1px solid #343b48; border-radius:12px; padding:16px; }
+    .colors { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin:12px 0 16px; }
+    .swatch { height:38px; border:0; border-radius:7px; cursor:pointer; }
+    .modal-actions { display:flex; gap:8px; } .modal-actions button { flex:1; height:40px; border-radius:7px; border:1px solid #343b48; background:#1b2029; color:white; }
+    @media (max-width:520px) { .app { padding:8px; } .chart-wrap { height:52vh; min-height:380px; } }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header><div class="brand">BXL <span>TRADE</span></div><div class="pill">DEMO • 10,000 THB</div></header>
+    <section class="pair"><div><div class="pill" style="display:inline-block">BTC / USD</div><div class="symbol">Bitcoin</div></div><div class="price" id="price">68,420.50</div></section>
+    <section class="chart-wrap">
+      <div class="toolbar">
+        <button class="tool active" id="zoomOut" title="ซูมออก">−</button>
+        <button class="tool active" id="zoomIn" title="ซูมเข้า">＋</button>
+        <button class="tool" id="colorBtn" title="เปลี่ยนสีกราฟ">🎨</button>
+      </div>
+      <canvas id="chart"></canvas>
+      <div class="result" id="result"><span id="resultTitle">WIN</span><b id="resultValue">+$82.40</b></div>
+    </section>
+    <section class="trade">
+      <button id="buy">BUY</button><button id="sell">SELL</button>
+      <div class="timer" id="timer">เวลาการเทรด <span id="countdown">—</span></div>
+    </section>
+  </main>
+  <div class="modal" id="colorModal"><div class="modal-card"><h3>สีกราฟ</h3><div class="colors"><button class="swatch" data-color="#00c087" style="background:#00c087"></button><button class="swatch" data-color="#ffb000" style="background:#ffb000"></button><button class="swatch" data-color="#58a6ff" style="background:#58a6ff"></button><button class="swatch" data-color="#b388ff" style="background:#b388ff"></button><button class="swatch" data-color="#ef5350" style="background:#ef5350"></button></div><div class="modal-actions"><button id="closeModal">ปิด</button></div></div></div>
+  <script>
+    const canvas=document.getElementById('chart'),ctx=canvas.getContext('2d');
+    let candles=[],zoom=1,chartColor='#00c087',trade=null,tradeTimer=null;
+    let last=68420.5;
+    for(let i=0;i<70;i++){let o=last+(Math.random()-0.5)*180,c=o+(Math.random()-0.5)*220,h=Math.max(o,c)+Math.random()*100,l=Math.min(o,c)-Math.random()*100;candles.push({o,c,h,l});last=c}
+    function resize(){const dpr=devicePixelRatio||1,r=canvas.getBoundingRect?.();canvas.width=canvas.clientWidth*dpr;canvas.height=canvas.clientHeight*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);draw()} 
+    window.addEventListener('resize',resize);
+    function draw(){const w=canvas.clientWidth,h=canvas.clientHeight;ctx.clearRect(0,0,w,h);ctx.fillStyle='#11151d';ctx.fillRect(0,0,w,h);ctx.strokeStyle='#232936';ctx.lineWidth=1;for(let i=0;i<6;i++){let y=i*h/6+.5;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}let visible=Math.floor(candles.length/zoom),start=candles.length-visible,visibleCandles=candles.slice(start);let hi=Math.max(...visibleCandles.map(v=>v.h)),lo=Math.min(...visibleCandles.map(v=>v.l)),pad=(hi-lo)*.12;hi+=pad;lo-=pad;const cw=w/visible*0.72;function py(v){return h-(v-lo)/(hi-lo)*h*.82-h*.02}visibleCandles.forEach((v,i)=>{let x=(i+.5)*w/visible;let up=v.c>=v.o,col=up?'#00c087':'#ef5350';ctx.strokeStyle=up?'#00c087':col;ctx.fillStyle=up?'#00c087':col;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,py(v.h));ctx.lineTo(x,py(v.l));ctx.stroke();let y=Math.min(py(v.o),py(v.c)),bh=Math.max(2,Math.abs(py(v.o)-py(v.c)));ctx.fillRect(x-cw/2,y,cw,bh)});ctx.strokeStyle=chartColor;ctx.setLineDash([5,4]);ctx.beginPath();ctx.moveTo(0,py(last));ctx.lineTo(w,py(last));ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#d6dae3';ctx.font='11px system-ui';ctx.fillText(hi.toLocaleString(undefined,{maximumFractionDigits:2}),w-70,14);ctx.fillText(lo.toLocaleString(undefined,{maximumFractionDigits:2}),w-70,h-8)}
+    function tick(){let o=last+(Math.random()-0.5)*90,c=o+(Math.random()-0.5)*100,h=Math.max(o,c)+Math.random()*55,l=Math.min(o,c)-Math.random()*55;candles.push({o,c,h,l});if(candles.length>100)candles.shift();last=c;document.getElementById('price').textContent=last.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});draw();}
+    resize();setInterval(tick,900);
+    document.getElementById('zoomIn').onclick=()=>{zoom=Math.min(3,zoom*1.25);draw()};document.getElementById('zoomOut').onclick=()=>{zoom=Math.max(1,zoom/1.25);draw()};
+    document.getElementById('colorBtn').onclick=()=>document.getElementById('colorModal').classList.add('open');document.getElementById('closeModal').onclick=()=>document.getElementById('colorModal').classList.remove('open');
+    document.querySelectorAll('.swatch').forEach(b=>b.onclick=()=>{chartColor=b.dataset.color;document.getElementById('colorModal').classList.remove('open');draw()});
+    function startTrade(side){if(trade)return;let entry=last,remaining=10;trade={side,entry};document.getElementById('buy').disabled=true;document.getElementById('sell').disabled=true;clearInterval(tradeTimer);document.getElementById('countdown').textContent=remaining+' วินาที';tradeTimer=setInterval(()=>{remaining--;document.getElementById('countdown').textContent=remaining+' วินาที';if(remaining<=0){clearInterval(tradeTimer);finishTrade()}},1000)}
+    function finishTrade(){let profit=(last-trade.entry)*(trade.side==='BUY'?1:-1);let win=profit>=0;let amount=Math.abs(profit);let result=document.getElementById('result');document.getElementById('resultTitle').textContent=win?'WIN • กำไร':'LOSS • ขาดทุน';document.getElementById('resultValue').textContent=(win?'+':'−')+'$'+amount.toFixed(2);result.className='result show '+(win?'win':'loss');setTimeout(()=>{result.className='result '+(win?'win':'loss')},4500);trade=null;document.getElementById('buy').disabled=false;document.getElementById('sell').disabled=false;document.getElementById('countdown').textContent='—'}
+    document.getElementById('buy').onclick=()=>startTrade('BUY');document.getElementById('sell').onclick=()=>startTrade('SELL');
+  </script>
+</body>
+</html>
